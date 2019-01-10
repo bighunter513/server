@@ -24,6 +24,7 @@
 #include "sql_show.h" // calc_sum_of_all_status
 #include "sql_select.h"
 #include "keycaches.h"
+#include "my_json_writer.h"
 #include <hash.h>
 #include <thr_alarm.h>
 #if defined(HAVE_MALLINFO) && defined(HAVE_MALLOC_H)
@@ -263,6 +264,27 @@ void print_keyuse_array(DYNAMIC_ARRAY *keyuse_array)
   DBUG_UNLOCK_FILE;
 }
 
+void print_keyuse_array_for_trace(Opt_trace_context *trace, DYNAMIC_ARRAY *keyuse_array)
+{
+  Json_writer *writer= trace->get_current_json();
+  Json_writer_object wrapper(writer);
+  Json_writer_array trace_key_uses(writer, "ref_optimizer_key_uses");
+  for(uint i=0; i < keyuse_array->elements; i++)
+  {
+    KEYUSE *keyuse= (KEYUSE*)dynamic_array_ptr(keyuse_array, i);
+    Json_writer_object keyuse_elem(writer);
+    keyuse_elem.add_table_name(keyuse->table->reginfo.join_tab);
+    keyuse_elem.add("field", (keyuse->keypart == FT_KEYPART) ? "<fulltext>"
+                                      : (keyuse->is_for_hash_join()
+                                        ? keyuse->table->field[keyuse->keypart]
+                                                       ->field_name.str
+                                        : keyuse->table->key_info[keyuse->key]
+                                          .key_part[keyuse->keypart]
+                                          .field->field_name.str));
+    keyuse_elem.add("equals",keyuse->val);
+    keyuse_elem.add("null_rejecting",keyuse->null_rejecting);
+  }
+}
 
 /* 
   Print the current state during query optimization.
